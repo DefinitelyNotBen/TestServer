@@ -20,6 +20,8 @@ type taskServer struct {
 	db     database.DB
 }
 
+// Initialise the mux server and task server. Mux server runs on localhost:8080
+// adds path handlers to the mux server, adds inputed database to the task server
 func Start(db database.DB) {
 	server := http.NewServeMux()
 	ts := NewTaskServer(db)
@@ -43,7 +45,6 @@ func (ts *taskServer) homeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ts *taskServer) readHandler(w http.ResponseWriter, r *http.Request) {
-
 	if ok := ts.db.Exists(r.PathValue("id")); !ok {
 		http.Error(w, "Data entry does not exist", 404)
 		return
@@ -96,7 +97,7 @@ func (ts *taskServer) updateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok := ts.db.Create(body)
+	ok := ts.db.Update(body)
 	if !ok {
 		http.Error(w, "Error writing to database", http.StatusInternalServerError)
 		return

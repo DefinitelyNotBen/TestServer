@@ -11,6 +11,7 @@ type Doc struct {
 // added a read/write mutex, only going to use write lock for now, but leaving door open for read lock
 type DB interface {
 	Create(Doc) bool
+	Update(Doc) bool
 	Delete(string) bool
 	Read(string) Doc
 	List() []Doc
@@ -30,25 +31,42 @@ func NewDB() *db {
 }
 
 func (d *db) Exists(s string) bool {
+	d.mutex.RLock()
+	defer d.mutex.RUnlock()
 	_, ok := d.m[s]
 	return ok
 }
 
 func (d *db) Read(s string) Doc {
+	d.mutex.RLock()
+	defer d.mutex.RUnlock()
 	val := d.m[s]
 	return val
 }
 
 // Create does the same as update, just need an exists check beforehand for Update
 func (d *db) Create(doc Doc) bool {
-	d.mutex.Lock()
 	d.m[doc.ID] = doc
-	d.mutex.Unlock()
+	return true
+}
+
+// Create does the same as update, just need an exists check beforehand for Update
+func (d *db) Update(doc Doc) bool {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
+	// check if doc been deleted before mutex lock started
+	if ok := d.Exists(doc.ID); !ok {
+		return false
+	}
+	d.m[doc.ID] = doc
 	return true
 }
 
 func (d *db) List() []Doc {
 	arr := []Doc{}
+	d.mutex.RLock()
+	defer d.mutex.RUnlock()
 	for _, v := range d.m {
 		arr = append(arr, v)
 	}
@@ -57,7 +75,12 @@ func (d *db) List() []Doc {
 
 func (d *db) Delete(s string) bool {
 	d.mutex.Lock()
+	defer d.mutex.Unlock()
+
+	// check if doc already deleted in race condition, return true if so
+	if ok := d.Exists(s); !ok {
+		return true
+	}
 	delete(d.m, s)
-	d.mutex.Unlock()
 	return true
 }
