@@ -32,6 +32,8 @@ func Start(db database.DB) {
 	server.HandleFunc("DELETE /delete/{id}", ts.deleteHandler)
 	server.HandleFunc("GET /list", ts.getHandler)
 
+	go db.Listen()
+
 	fmt.Println("Server is running on port 8080...")
 	err := http.ListenAndServe("localhost:8080", server)
 	if err != nil {
@@ -50,8 +52,19 @@ func (ts *taskServer) readHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	doc := ts.db.Read(r.PathValue("id"))
-	jsonBody, err := json.Marshal(doc)
+	msg := database.Message{
+		Action:   "read",
+		Document: database.Doc{ID: r.PathValue("id")},
+		Resp:     make(chan database.Response),
+	}
+
+	resp := ts.db.Send(msg)
+	if !resp.Result {
+		http.Error(w, "Error reading from database", http.StatusInternalServerError)
+		return
+	}
+
+	jsonBody, err := json.Marshal(resp.Documents[0])
 	if err != nil {
 		http.Error(w, "Error reading database", http.StatusInternalServerError)
 		return
@@ -70,13 +83,20 @@ func (ts *taskServer) createHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ok := ts.db.Exists(r.PathValue("id")); ok {
+	if ok := ts.db.Exists(body.ID); ok {
 		http.Error(w, "Data entry already exists", 409)
 		return
 	}
 
-	ok := ts.db.Create(body)
-	if !ok {
+	msg := database.Message{
+		Action:   "create",
+		Document: body,
+		Resp:     make(chan database.Response),
+	}
+
+	resp := ts.db.Send(msg)
+	fmt.Println("I have found the result")
+	if !resp.Result {
 		http.Error(w, "Error writing to database", http.StatusInternalServerError)
 		return
 	}
@@ -92,13 +112,19 @@ func (ts *taskServer) updateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ok := ts.db.Exists(r.PathValue("id")); !ok {
+	if ok := ts.db.Exists(body.ID); !ok {
 		http.Error(w, "Data entry does not exist", 404)
 		return
 	}
 
-	ok := ts.db.Update(body)
-	if !ok {
+	msg := database.Message{
+		Action:   "update",
+		Document: body,
+		Resp:     make(chan database.Response),
+	}
+
+	resp := ts.db.Send(msg)
+	if !resp.Result {
 		http.Error(w, "Error writing to database", http.StatusInternalServerError)
 		return
 	}
@@ -113,8 +139,15 @@ func (ts *taskServer) deleteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok := ts.db.Delete(r.PathValue("id"))
-	if !ok {
+	msg := database.Message{
+		Action:   "delete",
+		Document: database.Doc{ID: r.PathValue("id")},
+		Resp:     make(chan database.Response),
+	}
+
+	resp := ts.db.Send(msg)
+
+	if !resp.Result {
 		http.Error(w, "Error writing to database", http.StatusInternalServerError)
 		return
 	}
@@ -125,8 +158,18 @@ func (ts *taskServer) deleteHandler(w http.ResponseWriter, r *http.Request) {
 
 func (ts *taskServer) getHandler(w http.ResponseWriter, r *http.Request) {
 
-	docs := ts.db.List()
-	jsonBody, err := json.Marshal(docs)
+	msg := database.Message{
+		Action: "list",
+		Resp:   make(chan database.Response),
+	}
+
+	resp := ts.db.Send(msg)
+	if !resp.Result {
+		http.Error(w, "Error reading from database", http.StatusInternalServerError)
+		return
+	}
+
+	jsonBody, err := json.Marshal(resp.Documents)
 	if err != nil {
 		http.Error(w, "Error reading database", http.StatusInternalServerError)
 		return
